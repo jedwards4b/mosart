@@ -56,7 +56,7 @@ module rof_comp_nuopc
 
   logical                 :: do_rtm
   logical                 :: do_rtmflood
-
+  integer                 :: nthrds
   integer     , parameter :: debug = 1
   character(*), parameter :: modName =  "(rof_comp_nuopc)"
   character(*), parameter :: u_FILE_u = &
@@ -447,12 +447,14 @@ contains
     ! local variables
     type(ESMF_Mesh)       :: Emesh
     type(ESMF_DistGrid)   :: DistGrid              ! esmf global index space descriptor
+    type(ESMF_VM)         :: vm
     integer , allocatable :: gindex(:)             ! global index space on my processor
     integer               :: lbnum                 ! input to memory diagnostic
     character(CL)         :: cvalue                ! temporary
     integer               :: shrlogunit            ! original log unit
     integer               :: lsize
     integer               :: n,ni
+    integer               :: localPet
     character(len=*), parameter :: subname=trim(modName)//':(InitializeRealize) '
     !---------------------------------------------------------------------------
 
@@ -474,10 +476,23 @@ contains
     endif
 #endif
 
+    call ESMF_GridCompGet(gcomp, vm=vm, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    call ESMF_VMGet(vm, localPet=localPet, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    call ESMF_VMGet(vm, pet=localPet, peCount=nthrds, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    if(nthrds==1) then
+       call NUOPC_CompAttributeGet(gcomp, "nthreads", value=cvalue, rc=rc)
+       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=u_FILE_u)) return
+       read(cvalue,*) nthrds
+    endif
+!$  call omp_set_num_threads(nthrds)
+    print *,__FILE__,__LINE__,nthrds
+
     !--------------------------------
     ! generate the mesh and realize fields
     !--------------------------------
-
     if (do_rtm) then
        ! determine global index array
        lsize = rtmCTL%endr - rtmCTL%begr + 1
@@ -602,6 +617,7 @@ contains
 
     call shr_file_getLogUnit (shrlogunit)
     call shr_file_setLogUnit (iulog)
+!$  call omp_set_num_threads(nthrds)
 
 #if (defined _MEMTRACE)
     if(masterproc) then
